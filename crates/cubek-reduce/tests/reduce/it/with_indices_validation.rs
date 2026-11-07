@@ -5,7 +5,7 @@
 //! it had the values layout, producing silently wrong data. These tests pin
 //! that such calls are rejected before launch instead.
 
-use cubecl::{config::autotune::AutotuneLevel, prelude::*, zspace::Shape};
+use cubecl::{config::autotune::AutotuneLevel, future::block_on, prelude::*, zspace::Shape};
 use cubek_reduce::{
     ReduceError, ReduceStrategy, ReduceWithIndicesDtypes,
     components::instructions::ReduceOperationConfig,
@@ -71,7 +71,7 @@ fn try_launch_config(
         accumulation: input_dtype,
     };
 
-    reduce_with_indices(
+    let result = reduce_with_indices(
         &client,
         input.binding(),
         values.binding(),
@@ -80,7 +80,10 @@ fn try_launch_config(
         strategy,
         operation,
         dtypes,
-    )
+    );
+    // Initialization and accepted launches can still be compiling on the device thread.
+    block_on(client.sync()).unwrap();
+    result
 }
 
 #[test]

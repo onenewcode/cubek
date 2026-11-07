@@ -91,6 +91,11 @@ impl MatmulLayout {
     /// The alignment of an operand of `shape` at `strides` over the order its buffer steps: a col
     /// one's over its transposed buffer, any other's over the axes the product names.
     pub fn buffer_alignment(self, shape: &[usize], strides: &[usize]) -> ElemAlignment {
+        // Binding in stride order puts a broadcast matrix axis innermost. It cannot
+        // serve a contiguous vector, even when the other axis has unit stride.
+        if strides[strides.len() - 2..].contains(&0) {
+            return ElemAlignment::ONE;
+        }
         match self {
             Self::Col => {
                 let rank = shape.len();
@@ -156,6 +161,23 @@ mod tests {
         assert_eq!(
             MatmulLayout::Row.buffer_alignment(&shape, &strides),
             ElemAlignment::new(&shape, &strides)
+        );
+    }
+
+    #[test]
+    fn broadcast_matrix_axes_bind_one_element_at_a_time() {
+        for strides in [[1, 0], [0, 1]] {
+            let shape = [2, 3];
+            let layout = MatmulLayout::new(&Metadata::new(shape, strides), MatmulOperand::Rhs);
+            let alignment = layout.buffer_alignment(&shape, &strides);
+            assert!(alignment.admits(1));
+            assert!(!alignment.admits(2));
+        }
+        // Broadcasting a leading batch does not change the matrix's line width.
+        assert!(
+            MatmulLayout::Col
+                .buffer_alignment(&[3, 8, 4], &[0, 1, 8])
+                .admits(8)
         );
     }
 }
